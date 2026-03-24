@@ -273,24 +273,6 @@
         });
         container.appendChild(row);
       }
-
-      // per-participant top 5 (for selected participants or for all if none selected)
-      const listWrap = document.createElement('div'); listWrap.style.marginTop='8px';
-      const names = selectedAll ? (d.senders||[]).map(s=>s.name) : selected;
-      names.forEach(name => {
-        const text = (d.senderTexts && d.senderTexts[name]) || '';
-        const counts = countEmojisFromText(text);
-        const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5);
-        const box = document.createElement('div'); box.style.display='inline-block'; box.style.marginRight='16px'; box.style.marginBottom='8px'; box.style.verticalAlign='top';
-        const title = document.createElement('div'); title.style.fontWeight='600'; title.style.marginBottom='6px'; title.textContent = name;
-        box.appendChild(title);
-        if (entries.length===0){ const nod = document.createElement('div'); nod.textContent = '—'; box.appendChild(nod); }
-        else {
-          entries.forEach(([e,c])=>{ const el = document.createElement('div'); el.textContent = `${e} ${c}`; el.style.fontSize='18px'; box.appendChild(el); });
-        }
-        listWrap.appendChild(box);
-      });
-      container.appendChild(listWrap);
     }
 
     // render daily messages bar chart; expects array [{date:'YYYY-MM-DD',count: N}, ...]
