@@ -238,14 +238,6 @@
           const color = `hsl(${hue} 70% 45%)`;
           colors.push(color);
           window._dayGraphState.visible[s.name] = true;
-          const points = s.daily.map(x=>x.count);
-          ctx.beginPath();
-          for (let i=0;i<points.length;i++){
-            const x = padding + (i/(points.length-1||1))*chartW;
-            const y = padding + chartH - (points[i]/max)*chartH;
-            if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-          }
-          ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
 
           // legend with checkbox to toggle visibility
           const label = document.createElement('label');
@@ -258,6 +250,23 @@
           label.appendChild(cb); label.appendChild(sw); label.appendChild(nameEl);
           legend.appendChild(label);
         });
+      }
+
+      // helper: draw a smooth curve through points using quadratic bezier approximation
+      function drawSmooth(ctx, pts){
+        if (!pts || pts.length===0) return;
+        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i=1;i<pts.length-1;i++){
+          const xc = (pts[i].x + pts[i+1].x)/2;
+          const yc = (pts[i].y + pts[i+1].y)/2;
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+        }
+        // curve to last point
+        const last = pts[pts.length-1];
+        const prev = pts[pts.length-2];
+        ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
       }
 
       // redraw function that respects visibility and rescales axes
@@ -298,30 +307,21 @@
           ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(padding+chartW, y); ctx.stroke();
         }
 
-        // draw per-sender lines if visible
+        // draw per-sender lines if visible (smooth)
         if (perSenderDay && perSenderDay.length){
           perSenderDay.forEach((s, idx)=>{
             if (!window._dayGraphState.visible[s.name]) return;
             const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
-            const points = s.daily.map(x=>x.count);
-            ctx.beginPath();
-            for (let i=0;i<points.length;i++){
-              const x = padding + (i/(points.length-1||1))*chartW;
-              const y = padding + chartH - (points[i]/maxVal)*chartH;
-              if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-            }
+            const points = s.daily.map((x,i)=>({ x: padding + (i/(s.daily.length-1||1))*chartW, y: padding + chartH - (x.count/maxVal)*chartH }));
+            drawSmooth(ctx, points);
             ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
           });
         }
 
         // draw total line if enabled (use visibleTotals so total reflects hidden/visible senders)
         if (window._dayGraphState.showTotal !== false){
-          ctx.beginPath();
-          for (let i=0;i<visibleTotals.length;i++){
-            const x = padding + (i/(visibleTotals.length-1||1))*chartW;
-            const y = padding + chartH - (visibleTotals[i]/maxVal)*chartH;
-            if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-          }
+          const totalPoints = visibleTotals.map((v,i)=>({ x: padding + (i/(visibleTotals.length-1||1))*chartW, y: padding + chartH - (v/maxVal)*chartH }));
+          drawSmooth(ctx, totalPoints);
           ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.stroke();
         }
 
