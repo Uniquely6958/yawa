@@ -42,7 +42,18 @@ analyzeBtn.addEventListener('click', () => {
 
 function processText(text){
   const {messages, perSender, media} = parseWhatsAppExport(text);
-  updateUI(messages.length, perSender, media);
+  saveAndOpenResults(messages.length, perSender, media);
+}
+
+function saveAndOpenResults(total, perSenderMap, media){
+  const senders = Array.from(perSenderMap.entries()).map(([name,info])=>({name, count: info.count, media: info.media || 0}));
+  const payload = { total, media, senders };
+  try {
+    sessionStorage.setItem('wa_results', JSON.stringify(payload));
+    window.location.href = 'results.html';
+  } catch (e){
+    alert('Failed to store results for navigation: ' + e);
+  }
 }
 
 function parseWhatsAppExport(text){

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WhatsApp Analysis Results</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Analysis Results</h1>
+
+    <section id="results-section">
+      <ul id="stats">
+        <li><strong>Total messages:</strong> <span id="total">0</span></li>
+        <li><strong>Unique senders:</strong> <span id="senders">0</span></li>
+        <li><strong>Media messages:</strong> <span id="media">0</span></li>
+      </ul>
+
+      <div id="per-sender">
+        <h3>Messages per sender</h3>
+        <table id="sender-table">
+          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:16px">
+        <button id="back">Back</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const dataRaw = sessionStorage.getItem('wa_results');
+    if (!dataRaw){
+      document.getElementById('total').textContent = '0';
+    } else {
+      try {
+        const d = JSON.parse(dataRaw);
+        document.getElementById('total').textContent = d.total;
+        document.getElementById('senders').textContent = d.senders.length;
+        document.getElementById('media').textContent = d.media;
+
+        const tbody = document.querySelector('#sender-table tbody');
+        tbody.innerHTML = '';
+        d.senders.sort((a,b)=>b.count - a.count).forEach(s => {
+          const tr = document.createElement('tr');
+          const td1 = document.createElement('td'); td1.textContent = s.name;
+          const td2 = document.createElement('td'); td2.textContent = s.count;
+          const td3 = document.createElement('td'); td3.textContent = s.media || 0;
+          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+          tbody.appendChild(tr);
+        });
+      } catch (e){
+        console.error('Failed to parse results', e);
+      }
+    }
+
+    document.getElementById('back').addEventListener('click', ()=>{
+      window.location.href = 'index.html';
+    });
+  </script>
+</body>
+</html>
