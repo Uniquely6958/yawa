@@ -57,7 +57,7 @@ function saveAndOpenResults(result){
   }).filter(Boolean).join(' ');
   // compute per-sender message-level word stats (total words, longest message, avg words/msg)
   const perSenderMsgStats = Object.create(null);
-  for (const [name] of senders){ perSenderMsgStats[name] = { totalWords:0, longest:0, messages:0 }; }
+  for (const s of senders){ perSenderMsgStats[s.name] = { totalWords:0, longest:0, messages:0 }; }
   for (const m of messages){
     const text = (m.text||'').trim();
     if (!text) continue;
@@ -65,8 +65,7 @@ function saveAndOpenResults(result){
     const name = m.sender || 'Unknown';
     if (!perSenderMsgStats[name]) perSenderMsgStats[name] = { totalWords:0, longest:0, messages:0 };
     // count words without removing stopwords
-    const cleaned = String(text).replace(/[^
-\p{L}\p{N}'\s]+/gu,' ');
+    const cleaned = String(text).replace(/[^\p{L}\p{N}'\s]+/gu,' ');
     const parts = cleaned.split(/\s+/).filter(Boolean);
     const wc = parts.length;
     perSenderMsgStats[name].totalWords += wc;
@@ -80,6 +79,30 @@ function saveAndOpenResults(result){
     s.longest = st.longest;
     s.avgWords = st.messages ? (st.totalWords / st.messages) : 0;
   }
+  // compute unique words (wordstock) per sender from senderTexts
+  const wordstock = Object.create(null);
+  for (const s of senders){
+    wordstock[s.name] = 0;
+  }
+  for (const [name, text] of Object.entries((() => {
+    const tmp = Object.create(null);
+    for (const m of messages){
+      const t = (m.text||'').trim();
+      if (!t) continue;
+      if (systemRegex.test(t)) continue;
+      const who = m.sender || 'Unknown';
+      tmp[who] = (tmp[who] || '') + ' ' + t;
+    }
+    return tmp;
+  })())){
+    try {
+      const cleaned = String(text).toLowerCase().replace(/[^\p{L}\p{N}'\s]+/gu,' ');
+      const parts = cleaned.split(/\s+/).filter(Boolean);
+      const set = new Set(parts);
+      wordstock[name] = set.size;
+    } catch (e){ wordstock[name] = 0; }
+  }
+  for (const s of senders){ s.wordstock = wordstock[s.name] || 0; }
   // build per-sender concatenated text for participant-specific analysis
   const senderTexts = Object.create(null);
   for (const m of messages){
