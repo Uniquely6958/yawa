@@ -53,6 +53,12 @@
         <div id="avgLegend" style="margin-top:8px;font-size:13px"></div>
       </div>
 
+      <div id="response-time" style="margin-top:18px">
+        <h3>Response Time (mins) over time</h3>
+        <canvas id="respCanvas" width="900" height="300" style="border:1px solid #eee;width:100%;max-width:900px;height:auto"></canvas>
+        <div id="respLegend" style="margin-top:8px;font-size:13px"></div>
+      </div>
+
       <div style="margin-top:16px">
         <button id="back">Back</button>
       </div>
@@ -122,7 +128,8 @@
           if (showingCloud){ generateCloud(); } else { showTopWords(); }
           if (window._dayGraphRedraw) window._dayGraphRedraw();
           if (typeof renderEmojiStats === 'function') renderEmojiStats();
-          if (window._avgGraphRedraw) window._avgGraphRedraw();
+            if (window._avgGraphRedraw) window._avgGraphRedraw();
+            if (window._respGraphRedraw) window._respGraphRedraw();
         }
         function generateCloud(){
           const text = getSelectedText();
@@ -163,6 +170,7 @@
           if(d.text) generateCloud();
           if (typeof renderEmojiStats === 'function') renderEmojiStats();
           if(d.perDay && d.perSenderDay && d.perSenderDayWords) renderAvgLengthGraph(d.perDay, d.perSenderDay, d.perSenderDayWords);
+              if(d.perSenderDayResponses) renderResponseTimeGraph(d.perDay, d.perSenderDayResponses);
         }, 40);
       } catch (e){
         console.error('Failed to parse results', e);
@@ -251,6 +259,73 @@
 
       window._avgGraphRedraw = redrawAvg;
       redrawAvg();
+    }
+
+    // render response time (minutes) per sender over time
+    function renderResponseTimeGraph(list, perSenderDayResponses){
+      const canvas = document.getElementById('respCanvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = Math.min(900, Math.max(600, canvas.clientWidth));
+      const H = canvas.height = 300;
+      ctx.clearRect(0,0,W,H);
+      if (!list || !list.length) return;
+      const dates = list.map(x=>x.date);
+      const padding = 40;
+      const chartW = W - padding*2;
+      const chartH = H - padding*2;
+
+      // legend
+      const legend = document.getElementById('respLegend'); legend.innerHTML = '';
+      if (perSenderDayResponses && perSenderDayResponses.length){
+        perSenderDayResponses.forEach((s, idx)=>{
+          const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
+          const label = document.createElement('span'); label.style.display='inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px'; label.style.verticalAlign='middle';
+          const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
+          sw.innerHTML = `<rect width="12" height="12" fill="${color}"></rect>`;
+          const nameEl = document.createElement('strong'); nameEl.textContent = s.name; nameEl.style.marginLeft='4px';
+          label.appendChild(sw); label.appendChild(nameEl); legend.appendChild(label);
+        });
+      }
+
+      function drawSmooth(ctx, pts){
+        if (!pts || pts.length===0) return;
+        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i=1;i<pts.length-1;i++){ const xc=(pts[i].x+pts[i+1].x)/2; const yc=(pts[i].y+pts[i+1].y)/2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc); }
+        const last = pts[pts.length-1]; const prev = pts[pts.length-2]; ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
+      }
+
+      function redrawResp(){
+        // compute visible series and max
+        const visible = [];
+        let maxVal = 1;
+        perSenderDayResponses.forEach((s, idx)=>{
+          const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+          if (cb && !cb.checked) return;
+          const vals = s.daily.map(x=> x.avg || 0);
+          for (const v of vals) if (v>maxVal) maxVal = v;
+          visible.push({ name: s.name, vals, idx });
+        });
+
+        // clear and draw grid
+        ctx.clearRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+        ctx.strokeStyle='#eee'; ctx.lineWidth=1; for (let g=0; g<=4; g++){ const y = padding + (g/4)*chartH; ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+chartW,y); ctx.stroke(); }
+
+        // draw lines
+        for (const s of visible){
+          const hue = (s.idx*57)%360; const color = `hsl(${hue} 70% 45%)`;
+          const pts = s.vals.map((v,i)=>({ x: padding + (i/(dates.length-1||1))*chartW, y: padding + chartH - (v/maxVal)*chartH }));
+          drawSmooth(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+        }
+
+        // labels
+        ctx.fillStyle='#222'; ctx.font='12px Arial'; ctx.textAlign='center'; const step = Math.ceil(dates.length/8);
+        for (let i=0;i<dates.length;i+=step){ const x = padding + (i/(dates.length-1||1))*chartW; ctx.fillText(dates[i], x, padding+chartH+16); }
+        ctx.textAlign='right'; ctx.font='11px Arial'; for (let t=0;t<=4;t++){ const v = Math.round((maxVal/4)*t*10)/10; const y = padding + chartH - Math.round((t/4)*chartH); ctx.fillText(String(v), padding-8, y+4); }
+      }
+
+      window._respGraphRedraw = redrawResp;
+      redrawResp();
     }
 
     document.getElementById('back').addEventListener('click', ()=>{

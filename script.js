@@ -180,8 +180,35 @@ function saveAndOpenResults(result){
     const r = resp[s.name];
     s.avgResponseMin = (r && r.count) ? Math.round((r.sum / r.count) / 60000 * 10) / 10 : 0;
   }
+  // compute per-sender per-day average response times (minutes) for a time series
+  const perSenderDayRespMap = Object.create(null);
+  const msgsSorted = (messages || []).slice().filter(m=>m && m.ts && m.sender && m.text && !systemRegex.test(m.text)).sort((a,b)=>a.ts - b.ts);
+  let p = null;
+  for (const m of msgsSorted){
+    if (p && p.sender && p.ts && m.sender !== p.sender){
+      const diff = m.ts - p.ts;
+      if (diff > 0 && diff <= limit){
+        const day = new Date(m.ts).toISOString().slice(0,10);
+        perSenderDayRespMap[m.sender] = perSenderDayRespMap[m.sender] || Object.create(null);
+        perSenderDayRespMap[m.sender][day] = perSenderDayRespMap[m.sender][day] || { sum:0, count:0 };
+        perSenderDayRespMap[m.sender][day].sum += diff;
+        perSenderDayRespMap[m.sender][day].count += 1;
+      }
+    }
+    p = m;
+  }
+  // convert perSenderDayRespMap to list aligned with dates
+  const perSenderDayResponsesList = senders.map(s => ({ name: s.name, daily: dates.map(d => {
+    const cell = perSenderDayRespMap[s.name] && perSenderDayRespMap[s.name][d];
+    const avgMin = (cell && cell.count) ? Math.round((cell.sum / cell.count) / 60000 * 10) / 10 : 0;
+    return { date: d, avg: avgMin };
+  }) }));
   try {
     sessionStorage.setItem('wa_results', JSON.stringify(payload));
+    // attach the per-day response-time series to the payload storage as well
+    const stored = JSON.parse(sessionStorage.getItem('wa_results')) || {};
+    stored.perSenderDayResponses = perSenderDayResponsesList;
+    sessionStorage.setItem('wa_results', JSON.stringify(stored));
     window.location.href = 'results.html';
   } catch (e){
     alert('Failed to store results for navigation: ' + e);
