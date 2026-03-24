@@ -42,12 +42,21 @@ analyzeBtn.addEventListener('click', () => {
 
 function processText(text){
   const {messages, perSender, media} = parseWhatsAppExport(text);
-  saveAndOpenResults(messages.length, perSender, media);
+  saveAndOpenResults(messages.length, perSender, media, messages);
 }
 
 function saveAndOpenResults(total, perSenderMap, media){
   const senders = Array.from(perSenderMap.entries()).map(([name,info])=>({name, count: info.count, media: info.media || 0}));
-  const payload = { total, media, senders };
+  // build combined text from parsed messages, skipping obvious system messages
+  const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon)/i;
+  const combined = (arguments[3] || []).map(m=>{
+    const t = (m.text||'').trim();
+    if (!t) return '';
+    if (systemRegex.test(t)) return '';
+    return t;
+  }).filter(Boolean).join(' ');
+
+  const payload = { total, media, senders, text: combined };
   try {
     sessionStorage.setItem('wa_results', JSON.stringify(payload));
     window.location.href = 'results.html';

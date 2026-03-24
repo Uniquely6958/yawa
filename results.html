@@ -25,6 +25,19 @@
         </table>
       </div>
 
+      <div id="wordcloud-controls" style="margin-top:18px">
+        <h3>Word Cloud</h3>
+        <label>Max words: <input id="maxWords" type="number" value="80" min="10" max="500"/></label>
+        <label style="margin-left:12px"><input id="useStop" type="checkbox" checked/> Remove stopwords</label>
+        <button id="genCloud" style="margin-left:12px">Show Top 25 Words</button>
+      </div>
+
+      <div style="margin-top:12px">
+        <canvas id="wordCanvas" width="900" height="600" style="border:1px solid #eee;width:100%;max-width:900px;height:auto"></canvas>
+      </div>
+
+      <div id="topWords" style="margin-top:12px;display:none"></div>
+
       <div style="margin-top:16px">
         <button id="back">Back</button>
       </div>
@@ -52,6 +65,48 @@
           tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
           tbody.appendChild(tr);
         });
+        // wire wordcloud generation and toggle
+        const genBtn = document.getElementById('genCloud');
+        const maxWordsInput = document.getElementById('maxWords');
+        const useStopInput = document.getElementById('useStop');
+        const canvasEl = document.getElementById('wordCanvas');
+        const topWordsEl = document.getElementById('topWords');
+        function generateCloud(){
+          const text = d.text || '';
+          const maxWords = parseInt(maxWordsInput.value,10) || 80;
+          const useStop = useStopInput.checked;
+          renderWordCloud(text, {maxWords, useStop});
+        }
+
+        function showTopWords(){
+          const text = d.text || '';
+          const useStop = useStopInput.checked;
+          listTopWords(text, {maxItems:25, useStop});
+        }
+
+        // toggle behavior: default shows cloud
+        let showingCloud = true;
+        genBtn.textContent = 'Show Top 25 Words';
+        genBtn.addEventListener('click', ()=>{
+          if (showingCloud){
+            // switch to list
+            showingCloud = false;
+            canvasEl.style.display = 'none';
+            topWordsEl.style.display = 'block';
+            showTopWords();
+            genBtn.textContent = 'Show Word Cloud';
+          } else {
+            // switch to cloud
+            showingCloud = true;
+            topWordsEl.style.display = 'none';
+            canvasEl.style.display = 'block';
+            generateCloud();
+            genBtn.textContent = 'Show Top 25 Words';
+          }
+        });
+
+        // auto-generate cloud on load
+        setTimeout(()=>{ if(d.text) generateCloud(); }, 40);
       } catch (e){
         console.error('Failed to parse results', e);
       }
@@ -60,6 +115,111 @@
     document.getElementById('back').addEventListener('click', ()=>{
       window.location.href = 'index.html';
     });
+
+    // native word-cloud renderer (canvas)
+    function renderWordCloud(text, opts){
+      const canvas = document.getElementById('wordCanvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = Math.min(900, Math.max(600, canvas.clientWidth));
+      const H = canvas.height = 600;
+      ctx.clearRect(0,0,W,H);
+
+      if (!text || String(text).trim().length===0) return;
+
+      // tokenize
+      const stopwords = new Set(['the','and','to','a','i','you','is','in','of','for','it','that','on','my','me','are','we','this','with','have','be','not','but','as','they','at','or','was','so','if','from','just','do','what','what','how','your']);
+      const cleaned = text.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g,'').replace(/[^\p{L}\p{N}'\s]+/gu,' ');
+      const parts = cleaned.split(/\s+/).filter(Boolean);
+      const counts = Object.create(null);
+      for (const w of parts){
+        if (w.length<2) continue;
+        if (opts.useStop && stopwords.has(w)) continue;
+        counts[w] = (counts[w]||0)+1;
+      }
+      const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0, opts.maxWords || 80);
+      if (entries.length===0) return;
+
+      const freqs = entries.map(e=>e[1]);
+      const fmin = Math.min(...freqs);
+      const fmax = Math.max(...freqs);
+      const minFont = 14, maxFont = 72;
+
+      const placed = [];
+
+      function intersects(r1, r2){
+        return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
+      }
+
+      const cx = W/2, cy = H/2;
+
+      for (const [word, cnt] of entries){
+        const norm = fmax===fmin?0.5:(cnt - fmin)/(fmax - fmin);
+        const fontSize = Math.round(minFont + norm*(maxFont-minFont));
+        ctx.font = fontSize + 'px Arial';
+        const metrics = ctx.measureText(word);
+        const w = Math.ceil(metrics.width);
+        const h = Math.ceil(fontSize * 1.1);
+
+        // spiral placement
+        let placedRect = null;
+        const maxAttempts = 800;
+        for (let t=0;t<maxAttempts;t++){
+          const angle = 0.35 * t;
+          const radius = 4 + 2 * t;
+          const x = Math.round(cx + radius * Math.cos(angle) - w/2);
+          const y = Math.round(cy + radius * Math.sin(angle) - h/2);
+          const rect = {x,y,w,h};
+          // bounds
+          if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) continue;
+          let ok = true;
+          for (const p of placed){ if (intersects(rect, p)) { ok=false; break; } }
+          if (ok){ placedRect = rect; break; }
+        }
+        if (!placedRect) continue;
+
+        // draw
+        ctx.fillStyle = `hsl(${(cnt*53)%360} 70% 35%)`;
+        ctx.font = fontSize + 'px Arial';
+        ctx.fillText(word, placedRect.x, placedRect.y + Math.round(h*0.8));
+        placed.push(placedRect);
+      }
+    }
+
+    // list top words with counts and relative frequencies
+    function listTopWords(text, opts){
+      const container = document.getElementById('topWords');
+      container.innerHTML = '';
+      if (!text || String(text).trim().length===0){ container.textContent = 'No text available for word list.'; return; }
+
+      const stopwords = new Set(['the','and','to','a','i','you','is','in','of','for','it','that','on','my','me','are','we','this','with','have','be','not','but','as','they','at','or','was','so','if','from','just','do','what','how','your']);
+      const cleaned = text.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g,'').replace(/[^\p{L}\p{N}'\s]+/gu,' ');
+      const parts = cleaned.split(/\s+/).filter(Boolean);
+      const counts = Object.create(null);
+      let total = 0;
+      for (const w of parts){
+        if (w.length<2) continue;
+        if (opts.useStop && stopwords.has(w)) continue;
+        counts[w] = (counts[w]||0)+1; total += 1;
+      }
+      const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0, opts.maxItems || 25);
+
+      const table = document.createElement('table');
+      table.style.width = '100%';
+      table.style.borderCollapse = 'collapse';
+      const thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th style="text-align:left;padding:6px">Word</th><th style="padding:6px">Count</th><th style="padding:6px">Frequency</th></tr>';
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      for (const [w,c] of entries){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td style="padding:6px">${w}</td><td style="text-align:center;padding:6px">${c}</td><td style="text-align:center;padding:6px">${((c/total)*100).toFixed(1)}%</td>`;
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      container.appendChild(table);
+      // scroll into view
+      container.scrollIntoView({behavior:'smooth'});
+    }
   </script>
 </body>
 </html>
