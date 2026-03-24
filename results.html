@@ -25,18 +25,17 @@
         </table>
       </div>
 
+      <div id="participants" style="margin-top:12px"></div>
+
       <div id="daily-graph" style="margin-top:18px">
         <h3>Messages per Day</h3>
         <canvas id="dayCanvas" width="900" height="300" style="border:1px solid #eee;width:100%;max-width:900px;height:auto"></canvas>
         <div id="dayLegend" style="margin-top:8px;font-size:13px"></div>
       </div>
 
-      <div id="participants" style="margin-top:12px"></div>
-
       <div id="wordcloud-controls" style="margin-top:18px">
         <h3>Word Cloud</h3>
         <label>Max words: <input id="maxWords" type="number" value="80" min="10" max="500"/></label>
-        <label style="margin-left:12px"><input id="useStop" type="checkbox" checked/> Remove stopwords</label>
         <button id="genCloud" style="margin-left:12px">Show Top 25 Words</button>
       </div>
 
@@ -86,7 +85,6 @@
         // wire wordcloud generation and toggle
         const genBtn = document.getElementById('genCloud');
         const maxWordsInput = document.getElementById('maxWords');
-        const useStopInput = document.getElementById('useStop');
         const participantsEl = document.getElementById('participants');
         const canvasEl = document.getElementById('wordCanvas');
         const topWordsEl = document.getElementById('topWords');
@@ -96,11 +94,6 @@
           participantsEl.innerHTML = '<h3>Participants</h3>';
           const ctrl = document.createElement('div');
           ctrl.style.marginTop = '6px';
-          const selectAll = document.createElement('button'); selectAll.textContent = 'Select All'; selectAll.style.marginRight='8px';
-          const clearAll = document.createElement('button'); clearAll.textContent = 'Clear All';
-          selectAll.addEventListener('click', (e)=>{ e.preventDefault(); document.querySelectorAll('.participant-cb').forEach(cb=>cb.checked=true); onParticipantChange(); });
-          clearAll.addEventListener('click', (e)=>{ e.preventDefault(); document.querySelectorAll('.participant-cb').forEach(cb=>cb.checked=false); onParticipantChange(); });
-          ctrl.appendChild(selectAll); ctrl.appendChild(clearAll);
           participantsEl.appendChild(ctrl);
           const list = document.createElement('div'); list.style.marginTop = '8px';
           (d.senders || []).forEach(s => {
@@ -128,14 +121,12 @@
         function generateCloud(){
           const text = getSelectedText();
           const maxWords = parseInt(maxWordsInput.value,10) || 80;
-          const useStop = useStopInput.checked;
-          renderWordCloud(text, {maxWords, useStop});
+          renderWordCloud(text, {maxWords});
         }
 
         function showTopWords(){
           const text = getSelectedText();
-          const useStop = useStopInput.checked;
-          listTopWords(text, {maxItems:25, useStop});
+          listTopWords(text, {maxItems:25});
         }
 
         // toggle behavior: default shows cloud
@@ -191,7 +182,7 @@
       const counts = Object.create(null);
       for (const w of parts){
         if (w.length<2) continue;
-        if (opts.useStop && stopwords.has(w)) continue;
+        if (stopwords.has(w)) continue;
         counts[w] = (counts[w]||0)+1;
       }
       const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0, opts.maxWords || 80);
@@ -415,7 +406,7 @@
       let total = 0;
       for (const w of parts){
         if (w.length<2) continue;
-        if (opts.useStop && stopwords.has(w)) continue;
+        if (stopwords.has(w)) continue;
         counts[w] = (counts[w]||0)+1; total += 1;
       }
       const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0, opts.maxItems || 25);
