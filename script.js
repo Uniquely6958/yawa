@@ -131,7 +131,30 @@ function saveAndOpenResults(result){
     return {name, daily};
   });
 
-  const payload = { total: messages.length, media, senders, text: combined, perDay: perDayList, perSenderDay: perSenderDayList };
+  // compute per-sender per-day total words (for average message length graph)
+  const perSenderDayWordsMap = Object.create(null);
+  for (const s of senders) perSenderDayWordsMap[s.name] = Object.create(null);
+  const dateRx = /^(?:\[)?(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})/;
+  for (const m of messages){
+    const text = (m.text||'').trim();
+    if (!text) continue;
+    if (systemRegex.test(text)) continue;
+    const dm = m.raw.match(dateRx);
+    if (!dm) continue;
+    let d = dm[1];
+    if (!/\d{4}-\d{2}-\d{2}/.test(d)){
+      const parts = d.split('/').map(s=>s.padStart(2,'0'));
+      let dd = parts[0], mm = parts[1], yy = parts[2]; if (yy.length===2) yy = '20'+yy; d = `${yy}-${mm}-${dd}`;
+    }
+    const who = m.sender || 'Unknown';
+    const cleaned = String(text).replace(/[^\n\p{L}\p{N}'\s]+/gu,' ');
+    const wc = cleaned.split(/\s+/).filter(Boolean).length;
+    perSenderDayWordsMap[who] = perSenderDayWordsMap[who] || Object.create(null);
+    perSenderDayWordsMap[who][d] = (perSenderDayWordsMap[who][d]||0) + wc;
+  }
+  const perSenderDayWordsList = senders.map(s => ({ name: s.name, daily: dates.map(d=>({ date:d, words: perSenderDayWordsMap[s.name] ? (perSenderDayWordsMap[s.name][d]||0) : 0 })) }));
+
+  const payload = { total: messages.length, media, senders, text: combined, perDay: perDayList, perSenderDay: perSenderDayList, perSenderDayWords: perSenderDayWordsList };
   // attach per-sender texts
   payload.senderTexts = senderTexts;
   try {
