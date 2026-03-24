@@ -55,6 +55,31 @@ function saveAndOpenResults(result){
     if (systemRegex.test(t)) return '';
     return t;
   }).filter(Boolean).join(' ');
+  // compute per-sender message-level word stats (total words, longest message, avg words/msg)
+  const perSenderMsgStats = Object.create(null);
+  for (const [name] of senders){ perSenderMsgStats[name] = { totalWords:0, longest:0, messages:0 }; }
+  for (const m of messages){
+    const text = (m.text||'').trim();
+    if (!text) continue;
+    if (systemRegex.test(text)) continue;
+    const name = m.sender || 'Unknown';
+    if (!perSenderMsgStats[name]) perSenderMsgStats[name] = { totalWords:0, longest:0, messages:0 };
+    // count words without removing stopwords
+    const cleaned = String(text).replace(/[^
+\p{L}\p{N}'\s]+/gu,' ');
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    const wc = parts.length;
+    perSenderMsgStats[name].totalWords += wc;
+    perSenderMsgStats[name].messages += 1;
+    if (wc > perSenderMsgStats[name].longest) perSenderMsgStats[name].longest = wc;
+  }
+  // attach stats to senders array
+  for (const s of senders){
+    const st = perSenderMsgStats[s.name] || { totalWords:0, longest:0, messages:0 };
+    s.wordsTotal = st.totalWords;
+    s.longest = st.longest;
+    s.avgWords = st.messages ? (st.totalWords / st.messages) : 0;
+  }
   // build per-sender concatenated text for participant-specific analysis
   const senderTexts = Object.create(null);
   for (const m of messages){

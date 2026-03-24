@@ -20,7 +20,7 @@
       <div id="per-sender">
         <h3>Messages per sender</h3>
         <table id="sender-table">
-          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th><th>Words Typed</th></tr></thead>
+          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th><th>Words Typed</th><th>Longest (words)</th><th>Avg words/msg</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -66,22 +66,16 @@
 
         const tbody = document.querySelector('#sender-table tbody');
         tbody.innerHTML = '';
-        // show per-sender counts including a total-words column
+        // show per-sender counts including words, longest message (words) and average
         d.senders.sort((a,b)=>b.count - a.count).forEach(s => {
           const tr = document.createElement('tr');
           const td1 = document.createElement('td'); td1.textContent = s.name;
           const td2 = document.createElement('td'); td2.textContent = s.count;
           const td3 = document.createElement('td'); td3.textContent = s.media || 0;
-          // compute total words for this sender from senderTexts if available
-          let wordsCount = 0;
-          try {
-            const raw = (d.senderTexts && d.senderTexts[s.name]) || '';
-            const cleaned = raw.toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g,'').replace(/[^\p{L}\p{N}'\s]+/gu,' ');
-            const parts = cleaned.split(/\s+/).filter(Boolean);
-            wordsCount = parts.length;
-          } catch (e){ wordsCount = 0; }
-          const td4 = document.createElement('td'); td4.textContent = wordsCount;
-          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4);
+          const td4 = document.createElement('td'); td4.textContent = (s.wordsTotal!=null) ? s.wordsTotal : (d.senderTexts && d.senderTexts[s.name] ? d.senderTexts[s.name].split(/\s+/).filter(Boolean).length : 0);
+          const td5 = document.createElement('td'); td5.textContent = (s.longest!=null) ? s.longest : '0';
+          const td6 = document.createElement('td'); td6.textContent = (s.avgWords!=null) ? (Math.round(s.avgWords*10)/10) : '0';
+          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6);
           tbody.appendChild(tr);
         });
         // wire wordcloud generation and toggle
