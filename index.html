@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WhatsApp Export Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>WhatsApp Export Analyzer</h1>
+
+    <div class="uploader" id="drop-area">
+      <input id="fileInput" type="file" accept=".txt" />
+      <p>Upload a WhatsApp export text file (.txt) or drag it here</p>
+      <div class="controls">
+        <button id="analyzeBtn" disabled>Analyse</button>
+        <span id="file-info" class="file-info"></span>
+      </div>
+      <small>Counts total messages and shows per-sender counts.</small>
+    </div>
+
+    <section id="results" class="hidden">
+      <h2>Results</h2>
+      <ul id="stats">
+        <li><strong>Total messages:</strong> <span id="total">0</span></li>
+        <li><strong>Unique senders:</strong> <span id="senders">0</span></li>
+        <li><strong>Media messages:</strong> <span id="media">0</span></li>
+      </ul>
+
+      <div id="per-sender">
+        <h3>Messages per sender</h3>
+        <table id="sender-table">
+          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

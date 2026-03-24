@@ -1,0 +1,14 @@
+:root{--bg:#f6f8fb;--card:#fff;--accent:#2b6cb0}
+*{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+body{margin:0;background:var(--bg);color:#0b1220}
+.container{max-width:840px;margin:48px auto;padding:24px}
+.uploader{background:var(--card);border:2px dashed rgba(11,18,32,0.08);padding:28px;text-align:center;border-radius:8px}
+.uploader input{display:block;margin:12px auto}
+.uploader .controls{display:flex;gap:12px;align-items:center;justify-content:center;margin-top:8px}
+.uploader .controls button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+.uploader .controls button:disabled{opacity:0.5;cursor:not-allowed}
+.file-info{font-size:0.9rem;color:#556}
+.hidden{display:none}
+#results{margin-top:20px;background:var(--card);padding:18px;border-radius:8px}
+#sender-table{width:100%;border-collapse:collapse;margin-top:10px}
+#sender-table th,#sender-table td{padding:8px;border-bottom:1px solid #eee;text-align:left}
