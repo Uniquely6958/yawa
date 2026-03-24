@@ -157,6 +157,29 @@ function saveAndOpenResults(result){
   const payload = { total: messages.length, media, senders, text: combined, perDay: perDayList, perSenderDay: perSenderDayList, perSenderDayWords: perSenderDayWordsList };
   // attach per-sender texts
   payload.senderTexts = senderTexts;
+
+  // compute average response times per sender (ignore responses over 24 hours)
+  const resp = Object.create(null);
+  const limit = 24 * 3600 * 1000;
+  let prev = null;
+  for (const m of messages){
+    if (!m || !m.sender || !m.ts) { if (!m) continue; prev = (!m.text || systemRegex.test(m.text)) ? prev : m; continue; }
+    if (!m.text || systemRegex.test(m.text)) continue;
+    if (prev && prev.sender && prev.ts && m.sender !== prev.sender){
+      const diff = m.ts - prev.ts;
+      if (diff > 0 && diff <= limit){
+        resp[m.sender] = resp[m.sender] || {sum:0,count:0};
+        resp[m.sender].sum += diff;
+        resp[m.sender].count += 1;
+      }
+    }
+    prev = m;
+  }
+  // attach avgResponse (minutes) to senders
+  for (const s of senders){
+    const r = resp[s.name];
+    s.avgResponseMin = (r && r.count) ? Math.round((r.sum / r.count) / 60000 * 10) / 10 : 0;
+  }
   try {
     sessionStorage.setItem('wa_results', JSON.stringify(payload));
     window.location.href = 'results.html';
@@ -242,10 +265,11 @@ function parseWhatsAppExport(text){
       cur.media += 1;
     }
 
-    // extract date key (YYYY-MM-DD) from the message raw start
-    const dateMatch = m.raw.match(/^(?:\[)?(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})/);
-    if (dateMatch){
-      let d = dateMatch[1];
+    // extract date and time from the message raw start and store timestamp
+    const dtMatch = m.raw.match(/^(?:\[)?(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})[^\d]*(\d{1,2}:\d{2})/);
+    if (dtMatch){
+      let d = dtMatch[1];
+      const time = dtMatch[2];
       if (/\d{4}-\d{2}-\d{2}/.test(d)){
         // already ISO
       } else {
@@ -259,6 +283,11 @@ function parseWhatsAppExport(text){
         d = `${yy}-${mm}-${dd}`;
       }
       perDay.set(d, (perDay.get(d)||0) + 1);
+      // set a timestamp (local) for this message using the extracted time
+      try {
+        const iso = `${d}T${(typeof time !== 'undefined' ? time : '00:00')}:00`;
+        m.ts = new Date(iso).getTime();
+      } catch(e){ m.ts = null; }
       // per-sender per-day
       if (!perSenderDay.has(sender)) perSenderDay.set(sender, new Map());
       const sm = perSenderDay.get(sender);

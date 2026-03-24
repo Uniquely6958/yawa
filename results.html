@@ -20,7 +20,7 @@
       <div id="per-sender">
         <h3>Messages per sender</h3>
         <table id="sender-table">
-          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th><th>Words Typed</th><th>Wordstock</th><th>Longest (words)</th><th>Avg words/msg</th></tr></thead>
+          <thead><tr><th>Sender</th><th>Messages</th><th>Media</th><th>Words Typed</th><th>Wordstock</th><th>Longest (words)</th><th>Avg words/msg</th><th>Avg response (mins)</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -82,7 +82,8 @@
           const td5 = document.createElement('td'); td5.textContent = (s.wordstock!=null) ? s.wordstock : (d.senderTexts && d.senderTexts[s.name] ? (new Set(String(d.senderTexts[s.name]).toLowerCase().replace(/[^\n\p{L}\p{N}'\s]+/gu,' ').split(/\s+/).filter(Boolean))).size : 0);
           const td6 = document.createElement('td'); td6.textContent = (s.longest!=null) ? s.longest : '0';
           const td7 = document.createElement('td'); td7.textContent = (s.avgWords!=null) ? (Math.round(s.avgWords*10)/10) : '0';
-          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6); tr.appendChild(td7);
+          const td8 = document.createElement('td'); td8.textContent = (s.avgResponseMin!=null) ? s.avgResponseMin : '0';
+          tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6); tr.appendChild(td7); tr.appendChild(td8);
           tbody.appendChild(tr);
         });
         // wire wordcloud generation and toggle
