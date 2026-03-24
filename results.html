@@ -31,6 +31,8 @@
         <div id="dayLegend" style="margin-top:8px;font-size:13px"></div>
       </div>
 
+      <div id="participants" style="margin-top:12px"></div>
+
       <div id="wordcloud-controls" style="margin-top:18px">
         <h3>Word Cloud</h3>
         <label>Max words: <input id="maxWords" type="number" value="80" min="10" max="500"/></label>
@@ -75,17 +77,53 @@
         const genBtn = document.getElementById('genCloud');
         const maxWordsInput = document.getElementById('maxWords');
         const useStopInput = document.getElementById('useStop');
+        const participantsEl = document.getElementById('participants');
         const canvasEl = document.getElementById('wordCanvas');
         const topWordsEl = document.getElementById('topWords');
+        // build participant selector so user can pick one or more senders
+        function initParticipants(){
+          if (!participantsEl) return;
+          participantsEl.innerHTML = '<h3>Participants</h3>';
+          const ctrl = document.createElement('div');
+          ctrl.style.marginTop = '6px';
+          const selectAll = document.createElement('button'); selectAll.textContent = 'Select All'; selectAll.style.marginRight='8px';
+          const clearAll = document.createElement('button'); clearAll.textContent = 'Clear All';
+          selectAll.addEventListener('click', (e)=>{ e.preventDefault(); document.querySelectorAll('.participant-cb').forEach(cb=>cb.checked=true); onParticipantChange(); });
+          clearAll.addEventListener('click', (e)=>{ e.preventDefault(); document.querySelectorAll('.participant-cb').forEach(cb=>cb.checked=false); onParticipantChange(); });
+          ctrl.appendChild(selectAll); ctrl.appendChild(clearAll);
+          participantsEl.appendChild(ctrl);
+          const list = document.createElement('div'); list.style.marginTop = '8px';
+          (d.senders || []).forEach(s => {
+            const label = document.createElement('label'); label.style.display='inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px';
+            const cb = document.createElement('input'); cb.type='checkbox'; cb.className='participant-cb'; cb.value = s.name; cb.checked = true; cb.style.marginRight='6px';
+            cb.addEventListener('change', onParticipantChange);
+            const nameEl = document.createElement('span'); nameEl.textContent = s.name;
+            label.appendChild(cb); label.appendChild(nameEl); list.appendChild(label);
+          });
+          participantsEl.appendChild(list);
+        }
+
+        function getSelectedText(){
+          const checked = Array.from(document.querySelectorAll('.participant-cb:checked')).map(x=>x.value);
+          if (!checked.length) return d.text || '';
+          const parts = [];
+          for (const name of checked){ if (d.senderTexts && d.senderTexts[name]) parts.push(d.senderTexts[name]); }
+          return parts.join(' ');
+        }
+
+        function onParticipantChange(){
+          if (showingCloud){ generateCloud(); } else { showTopWords(); }
+          if (window._dayGraphRedraw) window._dayGraphRedraw();
+        }
         function generateCloud(){
-          const text = d.text || '';
+          const text = getSelectedText();
           const maxWords = parseInt(maxWordsInput.value,10) || 80;
           const useStop = useStopInput.checked;
           renderWordCloud(text, {maxWords, useStop});
         }
 
         function showTopWords(){
-          const text = d.text || '';
+          const text = getSelectedText();
           const useStop = useStopInput.checked;
           listTopWords(text, {maxItems:25, useStop});
         }
@@ -111,7 +149,8 @@
           }
         });
 
-        // auto-generate cloud on load and render daily graph
+        // init participants UI, auto-generate cloud on load and render daily graph
+        initParticipants();
         setTimeout(()=>{
             if(d.perDay && d.perDay.length) renderDailyGraph(d.perDay, d.perSenderDay);
           if(d.text) generateCloud();
@@ -219,7 +258,8 @@
         ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(padding+chartW, y); ctx.stroke();
       }
 
-      // draw per-sender lines
+      // legend area: show total toggle and per-sender swatches. Visibility is driven
+      // by the participant checkboxes (so the same controls affect wordcloud and graph).
       const colors = [];
       const legend = document.getElementById('dayLegend');
       legend.innerHTML = '';
@@ -230,24 +270,21 @@
       const totalLabel = document.createElement('span'); totalLabel.textContent = 'Show total';
       totalToggle.appendChild(totalCb); totalToggle.appendChild(totalLabel);
       legend.appendChild(totalToggle);
-      // store state for redraws
-      window._dayGraphState = { dates, perSenderDay, visible: {} };
+      // store basic state; visibility is read from participant checkboxes
+      window._dayGraphState = { dates, perSenderDay };
       if (perSenderDay && perSenderDay.length){
         perSenderDay.forEach((s, idx)=>{
           const hue = (idx*57) % 360;
           const color = `hsl(${hue} 70% 45%)`;
           colors.push(color);
-          window._dayGraphState.visible[s.name] = true;
 
-          // legend with checkbox to toggle visibility
-          const label = document.createElement('label');
-          label.style.display = 'inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px';
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true; cb.style.marginRight = '6px';
-          cb.addEventListener('change', ()=>{ window._dayGraphState.visible[s.name] = cb.checked; redrawLines(); });
+          // legend swatch + name (no checkbox here; use participant controls)
+          const label = document.createElement('span');
+          label.style.display = 'inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px'; label.style.verticalAlign='middle';
           const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
           sw.innerHTML = `<rect width="12" height="12" fill="${color}"></rect>`;
-          const nameEl = document.createElement('strong'); nameEl.textContent = s.name;
-          label.appendChild(cb); label.appendChild(sw); label.appendChild(nameEl);
+          const nameEl = document.createElement('strong'); nameEl.textContent = s.name; nameEl.style.marginLeft='4px';
+          label.appendChild(sw); label.appendChild(nameEl);
           legend.appendChild(label);
         });
       }
@@ -271,11 +308,12 @@
 
       // redraw function that respects visibility and rescales axes
       function redrawLines(){
-        // compute visible max from visible senders and recomputed total
+        // compute visible max from visible senders (determined by participant checkboxes)
         const visibleSenderSeries = [];
         if (perSenderDay && perSenderDay.length){
           perSenderDay.forEach((s, idx)=>{
-            if (window._dayGraphState.visible[s.name]){
+            const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+            if (!cb || cb.checked){
               visibleSenderSeries.push(s.daily.map(x=>x.count));
             }
           });
@@ -310,7 +348,8 @@
         // draw per-sender lines if visible (smooth)
         if (perSenderDay && perSenderDay.length){
           perSenderDay.forEach((s, idx)=>{
-            if (!window._dayGraphState.visible[s.name]) return;
+            const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+            if (cb && !cb.checked) return;
             const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
             const points = s.daily.map((x,i)=>({ x: padding + (i/(s.daily.length-1||1))*chartW, y: padding + chartH - (x.count/maxVal)*chartH }));
             drawSmooth(ctx, points);
@@ -345,6 +384,9 @@
       // attach total toggle handler and initial state
       window._dayGraphState.showTotal = true;
       totalCb.addEventListener('change', ()=>{ window._dayGraphState.showTotal = totalCb.checked; redrawLines(); });
+
+      // expose redraw so participant change handler can update the graph
+      window._dayGraphRedraw = redrawLines;
 
       // initial draw
       redrawLines();

@@ -55,6 +55,15 @@ function saveAndOpenResults(result){
     if (systemRegex.test(t)) return '';
     return t;
   }).filter(Boolean).join(' ');
+  // build per-sender concatenated text for participant-specific analysis
+  const senderTexts = Object.create(null);
+  for (const m of messages){
+    const text = (m.text||'').trim();
+    if (!text) continue;
+    if (systemRegex.test(text)) continue;
+    const s = m.sender || 'Unknown';
+    senderTexts[s] = (senderTexts[s] || '') + ' ' + text;
+  }
   // use perDay and perSenderDay provided by parser
   const perDayList = Array.isArray(perDay) ? perDay : (perDay instanceof Map ? Array.from(perDay.entries()).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,count])=>({date,count})) : []);
   // build per-sender daily arrays aligned to perDayList dates
@@ -75,6 +84,8 @@ function saveAndOpenResults(result){
   });
 
   const payload = { total: messages.length, media, senders, text: combined, perDay: perDayList, perSenderDay: perSenderDayList };
+  // attach per-sender texts
+  payload.senderTexts = senderTexts;
   try {
     sessionStorage.setItem('wa_results', JSON.stringify(payload));
     window.location.href = 'results.html';
@@ -120,8 +131,10 @@ function parseWhatsAppExport(text){
       if (colonIdx > 0){
         sender = rest.slice(0, colonIdx).trim();
         m.text = rest.slice(colonIdx+1).trim();
+        m.sender = sender;
       } else {
         m.text = rest.trim();
+        m.sender = sender;
       }
     } else {
       // fallback: try after "] " style
@@ -130,6 +143,7 @@ function parseWhatsAppExport(text){
         const after = alt.slice(1).join('] ');
         const c = after.indexOf(':');
         if (c>0){ sender = after.slice(0,c).trim(); m.text = after.slice(c+1).trim(); }
+        m.sender = sender;
       }
     }
 
@@ -143,6 +157,10 @@ function parseWhatsAppExport(text){
     }
 
     if (isSystem) continue; // skip counting system messages entirely
+
+    // ensure message records have sender and text for later per-sender text aggregation
+    m.sender = m.sender || sender;
+    m.text = m.text || '';
 
     if (!perSender.has(sender)) perSender.set(sender, {count:0, media:0});
     const cur = perSender.get(sender);
