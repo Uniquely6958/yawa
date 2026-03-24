@@ -25,6 +25,12 @@
         </table>
       </div>
 
+      <div id="daily-graph" style="margin-top:18px">
+        <h3>Messages per Day</h3>
+        <canvas id="dayCanvas" width="900" height="300" style="border:1px solid #eee;width:100%;max-width:900px;height:auto"></canvas>
+        <div id="dayLegend" style="margin-top:8px;font-size:13px"></div>
+      </div>
+
       <div id="wordcloud-controls" style="margin-top:18px">
         <h3>Word Cloud</h3>
         <label>Max words: <input id="maxWords" type="number" value="80" min="10" max="500"/></label>
@@ -105,8 +111,11 @@
           }
         });
 
-        // auto-generate cloud on load
-        setTimeout(()=>{ if(d.text) generateCloud(); }, 40);
+        // auto-generate cloud on load and render daily graph
+        setTimeout(()=>{
+            if(d.perDay && d.perDay.length) renderDailyGraph(d.perDay, d.perSenderDay);
+          if(d.text) generateCloud();
+        }, 40);
       } catch (e){
         console.error('Failed to parse results', e);
       }
@@ -183,6 +192,162 @@
         ctx.fillText(word, placedRect.x, placedRect.y + Math.round(h*0.8));
         placed.push(placedRect);
       }
+    }
+
+    // render daily messages bar chart; expects array [{date:'YYYY-MM-DD',count: N}, ...]
+    function renderDailyGraph(list, perSenderDay){
+      const canvas = document.getElementById('dayCanvas');
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width = Math.min(900, Math.max(600, canvas.clientWidth));
+      const H = canvas.height = 300;
+      ctx.clearRect(0,0,W,H);
+      if (!list || !list.length) return;
+      const dates = list.map(x=>x.date);
+      const totalCounts = list.map(x=>x.count);
+      const max = Math.max(...totalCounts, 1);
+      const padding = 40;
+      const chartW = W - padding*2;
+      const chartH = H - padding*2;
+
+      // background
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+
+      // draw grid lines
+      ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+      for (let g=0; g<=4; g++){
+        const y = padding + (g/4)*chartH;
+        ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(padding+chartW, y); ctx.stroke();
+      }
+
+      // draw per-sender lines
+      const colors = [];
+      const legend = document.getElementById('dayLegend');
+      legend.innerHTML = '';
+      // add total toggle
+      const totalToggle = document.createElement('label');
+      totalToggle.style.display = 'inline-block'; totalToggle.style.marginRight='12px'; totalToggle.style.marginBottom='6px';
+      const totalCb = document.createElement('input'); totalCb.type = 'checkbox'; totalCb.checked = true; totalCb.style.marginRight='6px';
+      const totalLabel = document.createElement('span'); totalLabel.textContent = 'Show total';
+      totalToggle.appendChild(totalCb); totalToggle.appendChild(totalLabel);
+      legend.appendChild(totalToggle);
+      // store state for redraws
+      window._dayGraphState = { dates, perSenderDay, visible: {} };
+      if (perSenderDay && perSenderDay.length){
+        perSenderDay.forEach((s, idx)=>{
+          const hue = (idx*57) % 360;
+          const color = `hsl(${hue} 70% 45%)`;
+          colors.push(color);
+          window._dayGraphState.visible[s.name] = true;
+          const points = s.daily.map(x=>x.count);
+          ctx.beginPath();
+          for (let i=0;i<points.length;i++){
+            const x = padding + (i/(points.length-1||1))*chartW;
+            const y = padding + chartH - (points[i]/max)*chartH;
+            if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+          }
+          ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+
+          // legend with checkbox to toggle visibility
+          const label = document.createElement('label');
+          label.style.display = 'inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true; cb.style.marginRight = '6px';
+          cb.addEventListener('change', ()=>{ window._dayGraphState.visible[s.name] = cb.checked; redrawLines(); });
+          const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
+          sw.innerHTML = `<rect width="12" height="12" fill="${color}"></rect>`;
+          const nameEl = document.createElement('strong'); nameEl.textContent = s.name;
+          label.appendChild(cb); label.appendChild(sw); label.appendChild(nameEl);
+          legend.appendChild(label);
+        });
+      }
+
+      // redraw function that respects visibility and rescales axes
+      function redrawLines(){
+        // compute visible max from visible senders and recomputed total
+        const visibleSenderSeries = [];
+        if (perSenderDay && perSenderDay.length){
+          perSenderDay.forEach((s, idx)=>{
+            if (window._dayGraphState.visible[s.name]){
+              visibleSenderSeries.push(s.daily.map(x=>x.count));
+            }
+          });
+        }
+
+        // compute visibleTotals (sum across visible senders per date)
+        const visibleTotals = [];
+        for (let i=0;i<dates.length;i++){
+          let sum = 0;
+          for (const series of visibleSenderSeries) sum += (series[i]||0);
+          visibleTotals.push(sum);
+        }
+
+        // determine y-axis max: if total line is shown, include visibleTotals; otherwise base on per-sender maxima
+        let maxFromSenders = 1;
+        if (visibleSenderSeries.length){
+          for (const s of visibleSenderSeries){ for (const v of s) if (v>maxFromSenders) maxFromSenders = v; }
+        }
+        const maxFromTotals = (window._dayGraphState.showTotal !== false) ? Math.max(...visibleTotals, 1) : 0;
+        const maxVal = Math.max(maxFromSenders, maxFromTotals, 1);
+
+        // clear only the chart area
+        ctx.clearRect(0,0,W,H);
+        // background and grid
+        ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+        ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+        for (let g=0; g<=4; g++){
+          const y = padding + (g/4)*chartH;
+          ctx.beginPath(); ctx.moveTo(padding, y); ctx.lineTo(padding+chartW, y); ctx.stroke();
+        }
+
+        // draw per-sender lines if visible
+        if (perSenderDay && perSenderDay.length){
+          perSenderDay.forEach((s, idx)=>{
+            if (!window._dayGraphState.visible[s.name]) return;
+            const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
+            const points = s.daily.map(x=>x.count);
+            ctx.beginPath();
+            for (let i=0;i<points.length;i++){
+              const x = padding + (i/(points.length-1||1))*chartW;
+              const y = padding + chartH - (points[i]/maxVal)*chartH;
+              if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            }
+            ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+          });
+        }
+
+        // draw total line if enabled (use visibleTotals so total reflects hidden/visible senders)
+        if (window._dayGraphState.showTotal !== false){
+          ctx.beginPath();
+          for (let i=0;i<visibleTotals.length;i++){
+            const x = padding + (i/(visibleTotals.length-1||1))*chartW;
+            const y = padding + chartH - (visibleTotals[i]/maxVal)*chartH;
+            if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+          }
+          ctx.strokeStyle = '#000'; ctx.lineWidth = 3; ctx.stroke();
+        }
+
+        // x labels
+        ctx.fillStyle = '#222'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+        const step = Math.ceil(dates.length / 8);
+        for (let i=0;i<dates.length;i+=step){
+          const x = padding + (i/(dates.length-1||1))*chartW;
+          ctx.fillText(dates[i], x, padding + chartH + 16);
+        }
+
+        // y axis ticks (based on maxVal)
+        ctx.textAlign = 'right'; ctx.font = '11px Arial';
+        for (let t=0;t<=4;t++){
+          const v = Math.round((maxVal/4)*t);
+          const y = padding + chartH - Math.round((v/maxVal)*chartH);
+          ctx.fillText(String(v), padding-8, y+4);
+        }
+      }
+
+      // attach total toggle handler and initial state
+      window._dayGraphState.showTotal = true;
+      totalCb.addEventListener('change', ()=>{ window._dayGraphState.showTotal = totalCb.checked; redrawLines(); });
+
+      // initial draw
+      redrawLines();
     }
 
     // list top words with counts and relative frequencies

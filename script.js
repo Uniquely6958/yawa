@@ -41,22 +41,40 @@ analyzeBtn.addEventListener('click', () => {
 });
 
 function processText(text){
-  const {messages, perSender, media} = parseWhatsAppExport(text);
-  saveAndOpenResults(messages.length, perSender, media, messages);
+  const result = parseWhatsAppExport(text);
+  saveAndOpenResults(result);
 }
-
-function saveAndOpenResults(total, perSenderMap, media){
-  const senders = Array.from(perSenderMap.entries()).map(([name,info])=>({name, count: info.count, media: info.media || 0}));
+function saveAndOpenResults(result){
+  const {messages, perSender, media, perDay, perSenderDay} = result;
+  const senders = Array.from(perSender.entries()).map(([name,info])=>({name, count: info.count, media: info.media || 0}));
   // build combined text from parsed messages, skipping obvious system messages
   const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon)/i;
-  const combined = (arguments[3] || []).map(m=>{
+  const combined = (messages || []).map(m=>{
     const t = (m.text||'').trim();
     if (!t) return '';
     if (systemRegex.test(t)) return '';
     return t;
   }).filter(Boolean).join(' ');
+  // use perDay and perSenderDay provided by parser
+  const perDayList = Array.isArray(perDay) ? perDay : (perDay instanceof Map ? Array.from(perDay.entries()).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,count])=>({date,count})) : []);
+  // build per-sender daily arrays aligned to perDayList dates
+  const dates = perDayList.map(x=>x.date);
+  const perSenderDayList = senders.map(s => {
+    const name = s.name;
+    const daily = dates.map(d => {
+      let count = 0;
+      if (perSenderDay && perSenderDay[name] && typeof perSenderDay[name] === 'object'){
+        count = perSenderDay[name][d] || 0;
+      } else if (perSenderDay instanceof Map && perSenderDay.has(name)){
+        const m = perSenderDay.get(name);
+        count = m && m.get ? (m.get(d) || 0) : 0;
+      }
+      return {date:d, count};
+    });
+    return {name, daily};
+  });
 
-  const payload = { total, media, senders, text: combined };
+  const payload = { total: messages.length, media, senders, text: combined, perDay: perDayList, perSenderDay: perSenderDayList };
   try {
     sessionStorage.setItem('wa_results', JSON.stringify(payload));
     window.location.href = 'results.html';
@@ -85,6 +103,8 @@ function parseWhatsAppExport(text){
 
   const perSender = new Map();
   let mediaCount = 0;
+  const perDay = new Map();
+  const perSenderDay = new Map();
 
   // common system-message patterns to ignore
   const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon)/i;
@@ -132,9 +152,32 @@ function parseWhatsAppExport(text){
       mediaCount++;
       cur.media += 1;
     }
+
+    // extract date key (YYYY-MM-DD) from the message raw start
+    const dateMatch = m.raw.match(/^(?:\[)?(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4})/);
+    if (dateMatch){
+      let d = dateMatch[1];
+      if (/\d{4}-\d{2}-\d{2}/.test(d)){
+        // already ISO
+      } else {
+        // dd/mm/yyyy or d/m/yy
+        const parts = d.split('/').map(s=>s.padStart(2,'0'));
+        // parts = [dd,mm,yyyy]
+        let dd = parts[0];
+        let mm = parts[1];
+        let yy = parts[2];
+        if (yy.length===2) yy = '20'+yy;
+        d = `${yy}-${mm}-${dd}`;
+      }
+      perDay.set(d, (perDay.get(d)||0) + 1);
+      // per-sender per-day
+      if (!perSenderDay.has(sender)) perSenderDay.set(sender, new Map());
+      const sm = perSenderDay.get(sender);
+      sm.set(d, (sm.get(d)||0) + 1);
+    }
   }
 
-  return {messages, perSender, media: mediaCount};
+  return {messages, perSender, media: mediaCount, perDay, perSenderDay};
 }
 
 function updateUI(total, perSenderMap, media){
