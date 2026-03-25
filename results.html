@@ -295,8 +295,7 @@
           const pts = s.vals.map((v,i)=>({ x: padding + (i/(dates.length-1||1))*chartW, y: padding + chartH - (v/maxVal)*chartH }));
           drawSmooth(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
         }
-
-                  out.push({ name: s.name, val, idx: si, color: seriesColor(si) });
+        const step = Math.ceil(dates.length/8);
         for (let i=0;i<dates.length;i+=step){ const x = padding + (i/(dates.length-1||1))*chartW; ctx.fillText(dates[i], x, padding+chartH+16); }
         ctx.textAlign='right'; ctx.font='11px Arial'; for (let t=0;t<=4;t++){ const v = Math.round((maxVal/4)*t); const y = padding + chartH - Math.round((t/4)*chartH); ctx.fillText(String(v), padding-8, y+4); }
       }
