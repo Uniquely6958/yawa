@@ -185,6 +185,70 @@
       }
     }
 
+    // helper to create or return a single tooltip element used by canvases
+    function ensureTooltip(){
+      let t = document.getElementById('canvas-tooltip');
+      if (t) return t;
+      t = document.createElement('div'); t.id = 'canvas-tooltip';
+      t.style.position = 'fixed'; t.style.pointerEvents = 'none'; t.style.background = 'rgba(255,255,255,0.95)'; t.style.border = '1px solid #ccc'; t.style.padding = '8px'; t.style.fontSize = '12px'; t.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)'; t.style.display = 'none'; t.style.zIndex = 9999; t.style.maxWidth = '320px';
+      document.body.appendChild(t);
+      return t;
+    }
+
+    // common helpers
+    function drawSmooth(ctx, pts){
+      if (!pts || pts.length===0) return;
+      if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i=1;i<pts.length-1;i++){ const xc=(pts[i].x+pts[i+1].x)/2; const yc=(pts[i].y+pts[i+1].y)/2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc); }
+      const last = pts[pts.length-1]; const prev = pts[pts.length-2]; ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
+    }
+
+    function seriesColor(idx){ return `hsl(${(idx*57)%360} 70% 45%)`; }
+
+    // generic hover/tooltip attachment for time-series canvases
+    function setupCanvasHover(opts){
+      const { canvas, dates, padding, chartW, chartH, redraw, getEntriesAtIndex, getMaxForEntries, getFooterHtml } = opts;
+      if (!canvas || canvas._hoverAttached) return;
+      const tooltip = ensureTooltip();
+      const ctx = canvas.getContext('2d');
+      function onMove(ev){
+        const r = canvas.getBoundingClientRect();
+        const x = ev.clientX - r.left;
+        const rel = Math.max(0, Math.min(1, (x - padding) / chartW));
+        const idx = Math.round(rel * (dates.length - 1));
+        // redraw base chart
+        if (typeof redraw === 'function') redraw();
+        // get entries for this index
+        const entries = (typeof getEntriesAtIndex === 'function') ? getEntriesAtIndex(idx) : [];
+        entries.sort((a,b)=>b.val - a.val);
+        const maxVal = (typeof getMaxForEntries === 'function') ? getMaxForEntries(entries) : Math.max(1, ...entries.map(e=>e.val||0));
+
+        // draw vertical marker
+        const markerX = padding + (idx/(dates.length-1||1))*chartW;
+        ctx.beginPath(); ctx.moveTo(markerX, padding); ctx.lineTo(markerX, padding+chartH); ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+
+        // draw markers and build tooltip html
+        let html = `<div><strong>${dates[idx]}</strong></div>`;
+        for (const en of entries){
+          const color = en.color || seriesColor(en.idx);
+          const v = en.val || 0;
+          const y = padding + chartH - (v/maxVal)*chartH;
+          ctx.beginPath(); ctx.arc(markerX, y, 4, 0, Math.PI*2); ctx.fillStyle = color; ctx.fill();
+          html += `<div style="color:${color}">${en.name}: ${en.display || v}</div>`;
+        }
+        if (typeof getFooterHtml === 'function'){ html += getFooterHtml(idx, entries) || ''; }
+
+        tooltip.innerHTML = html; tooltip.style.display = 'block';
+        const left = Math.min(window.innerWidth - 340, ev.clientX + 12); const top = Math.min(window.innerHeight - 80, ev.clientY + 12);
+        tooltip.style.left = left + 'px'; tooltip.style.top = top + 'px';
+      }
+      function onLeave(){ tooltip.style.display='none'; if (typeof redraw === 'function') redraw(); }
+      canvas.addEventListener('mousemove', onMove);
+      canvas.addEventListener('mouseleave', onLeave);
+      canvas._hoverAttached = true;
+    }
+
     // render words-per-day per sender over time
     function renderWordsPerDayGraph(list, perSenderDayWords){
       const canvas = document.getElementById('wordsDayCanvas');
@@ -201,7 +265,7 @@
       const legend = document.getElementById('wordsDayLegend'); legend.innerHTML = '';
       if (perSenderDayWords && perSenderDayWords.length){
         perSenderDayWords.forEach((s, idx)=>{
-          const hue = (idx*57)%360; const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(idx);
           const label = document.createElement('span'); label.style.display='inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px'; label.style.verticalAlign='middle';
           const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
           sw.innerHTML = `<rect width="12" height="12" fill="${color}"></rect>`;
@@ -210,13 +274,7 @@
         });
       }
 
-      function drawSmooth(ctx, pts){
-        if (!pts || pts.length===0) return;
-        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
-        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i=1;i<pts.length-1;i++){ const xc=(pts[i].x+pts[i+1].x)/2; const yc=(pts[i].y+pts[i+1].y)/2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc); }
-        const last = pts[pts.length-1]; const prev = pts[pts.length-2]; ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
-      }
+      
 
       function redrawWords(){
         const visible = [];
@@ -233,18 +291,35 @@
         ctx.strokeStyle='#eee'; ctx.lineWidth=1; for (let g=0; g<=4; g++){ const y = padding + (g/4)*chartH; ctx.beginPath(); ctx.moveTo(padding,y); ctx.lineTo(padding+chartW,y); ctx.stroke(); }
 
         for (const s of visible){
-          const hue = (s.idx*57)%360; const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(s.idx);
           const pts = s.vals.map((v,i)=>({ x: padding + (i/(dates.length-1||1))*chartW, y: padding + chartH - (v/maxVal)*chartH }));
           drawSmooth(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
         }
 
-        ctx.fillStyle='#222'; ctx.font='12px Arial'; ctx.textAlign='center'; const step = Math.ceil(dates.length/8);
+                  out.push({ name: s.name, val, idx: si, color: seriesColor(si) });
         for (let i=0;i<dates.length;i+=step){ const x = padding + (i/(dates.length-1||1))*chartW; ctx.fillText(dates[i], x, padding+chartH+16); }
         ctx.textAlign='right'; ctx.font='11px Arial'; for (let t=0;t<=4;t++){ const v = Math.round((maxVal/4)*t); const y = padding + chartH - Math.round((t/4)*chartH); ctx.fillText(String(v), padding-8, y+4); }
       }
 
       window._wordsDayGraphRedraw = redrawWords;
       redrawWords();
+
+      // attach generic hover handler for words-per-day
+      setupCanvasHover({
+        canvas, dates, padding, chartW, chartH,
+        redraw: redrawWords,
+        getEntriesAtIndex: idx => {
+          const out = [];
+          perSenderDayWords.forEach((s, si)=>{
+            const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+            if (cb && !cb.checked) return;
+            const val = s.daily[idx] ? (s.daily[idx].words||0) : 0;
+            out.push({ name: s.name, val, idx: si, color: seriesColor(si) });
+          });
+          return out;
+        },
+        getMaxForEntries: entries => Math.max(1, ...perSenderDayWords.flatMap(s=>s.daily.map(d=>d.words||0)))
+      });
     }
 
     // render average message length per sender over time
@@ -267,8 +342,7 @@
       const legend = document.getElementById('avgLegend'); legend.innerHTML = '';
       if (perSenderDay && perSenderDay.length){
         perSenderDay.forEach((s, idx)=>{
-          const hue = (idx*57) % 360;
-          const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(idx);
           const label = document.createElement('span');
           label.style.display = 'inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px'; label.style.verticalAlign='middle';
           const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
@@ -283,14 +357,7 @@
       const series = perSenderDay.map((s, idx) => ({ name: s.name, counts: s.daily.map(x=>x.count), idx }));
       const wordsSeries = perSenderDayWords.map((s, idx) => ({ name: s.name, words: s.daily.map(x=>x.words), idx }));
 
-      // helper to draw smooth curve
-      function drawSmooth(ctx, pts){
-        if (!pts || pts.length===0) return;
-        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
-        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i=1;i<pts.length-1;i++){ const xc=(pts[i].x+pts[i+1].x)/2; const yc=(pts[i].y+pts[i+1].y)/2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc); }
-        const last = pts[pts.length-1]; const prev = pts[pts.length-2]; ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
-      }
+      
 
       function redrawAvg(){
         // compute per-sender visible averages
@@ -314,7 +381,7 @@
 
         // draw per-sender lines using consistent colors
         for (let i=0;i<visibleAverages.length;i++){
-          const s = visibleAverages[i]; const hue = (s.idx*57)%360; const color = `hsl(${hue} 70% 45%)`;
+          const s = visibleAverages[i]; const color = seriesColor(s.idx);
           const pts = s.avgs.map((v,idx)=>({ x: padding + (idx/(dates.length-1||1))*chartW, y: padding + chartH - (v/maxAvg)*chartH }));
           drawSmooth(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
         }
@@ -329,6 +396,25 @@
 
       window._avgGraphRedraw = redrawAvg;
       redrawAvg();
+
+      // attach generic hover handler for avg-length
+      setupCanvasHover({
+        canvas, dates, padding, chartW, chartH,
+        redraw: redrawAvg,
+        getEntriesAtIndex: idx => {
+          const out = [];
+          for (let i=0;i<series.length;i++){
+            const sname = series[i].name;
+            const cb = document.querySelector(`.participant-cb[value="${sname}"]`);
+            if (cb && !cb.checked) continue;
+            const counts = series[i].counts; const words = (wordsSeries.find(x=>x.name===sname) || {words:[]}).words;
+            const v = counts[idx] ? (words[idx] / counts[idx]) : 0;
+            out.push({ name: sname, val: v, idx: series[i].idx, display: v.toFixed(1) });
+          }
+          return out;
+        },
+        getMaxForEntries: entries => Math.max(1, ...entries.map(e=>e.val||0))
+      });
     }
 
     // render response time (minutes) per sender over time
@@ -348,7 +434,7 @@
       const legend = document.getElementById('respLegend'); legend.innerHTML = '';
       if (perSenderDayResponses && perSenderDayResponses.length){
         perSenderDayResponses.forEach((s, idx)=>{
-          const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(idx);
           const label = document.createElement('span'); label.style.display='inline-block'; label.style.marginRight='12px'; label.style.marginBottom='6px'; label.style.verticalAlign='middle';
           const sw = document.createElement('svg'); sw.setAttribute('width','12'); sw.setAttribute('height','12'); sw.style.verticalAlign='middle'; sw.style.marginRight='6px';
           sw.innerHTML = `<rect width="12" height="12" fill="${color}"></rect>`;
@@ -357,13 +443,7 @@
         });
       }
 
-      function drawSmooth(ctx, pts){
-        if (!pts || pts.length===0) return;
-        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
-        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i=1;i<pts.length-1;i++){ const xc=(pts[i].x+pts[i+1].x)/2; const yc=(pts[i].y+pts[i+1].y)/2; ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc); }
-        const last = pts[pts.length-1]; const prev = pts[pts.length-2]; ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
-      }
+      
 
       function redrawResp(){
         // compute visible series and max
@@ -383,7 +463,7 @@
 
         // draw lines
         for (const s of visible){
-          const hue = (s.idx*57)%360; const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(s.idx);
           const pts = s.vals.map((v,i)=>({ x: padding + (i/(dates.length-1||1))*chartW, y: padding + chartH - (v/maxVal)*chartH }));
           drawSmooth(ctx, pts); ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
         }
@@ -396,6 +476,23 @@
 
       window._respGraphRedraw = redrawResp;
       redrawResp();
+
+      // attach generic hover handler for response-time
+      setupCanvasHover({
+        canvas, dates, padding, chartW, chartH,
+        redraw: redrawResp,
+        getEntriesAtIndex: idx => {
+          const out = [];
+          perSenderDayResponses.forEach((s, si)=>{
+            const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+            if (cb && !cb.checked) return;
+            const val = s.daily[idx] ? (s.daily[idx].avg||0) : 0;
+            out.push({ name: s.name, val, idx: si, color: seriesColor(si) });
+          });
+          return out;
+        },
+        getMaxForEntries: entries => Math.max(1, ...perSenderDayResponses.flatMap(s=>s.daily.map(d=>d.avg||0)))
+      });
     }
 
     document.getElementById('back').addEventListener('click', ()=>{
@@ -464,7 +561,7 @@
         if (!placedRect) continue;
 
         // draw
-        ctx.fillStyle = `hsl(${(cnt*53)%360} 70% 35%)`;
+        ctx.fillStyle = seriesColor(cnt);
         ctx.font = fontSize + 'px Arial';
         ctx.fillText(word, placedRect.x, placedRect.y + Math.round(h*0.8));
         placed.push(placedRect);
@@ -554,8 +651,7 @@
       window._dayGraphState = { dates, perSenderDay };
       if (perSenderDay && perSenderDay.length){
         perSenderDay.forEach((s, idx)=>{
-          const hue = (idx*57) % 360;
-          const color = `hsl(${hue} 70% 45%)`;
+          const color = seriesColor(idx);
           colors.push(color);
 
           // legend swatch + name (no checkbox here; use participant controls)
@@ -569,22 +665,7 @@
         });
       }
 
-      // helper: draw a smooth curve through points using quadratic bezier approximation
-      function drawSmooth(ctx, pts){
-        if (!pts || pts.length===0) return;
-        if (pts.length===1){ ctx.fillRect(pts[0].x, pts[0].y, 2, 2); return; }
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x, pts[0].y);
-        for (let i=1;i<pts.length-1;i++){
-          const xc = (pts[i].x + pts[i+1].x)/2;
-          const yc = (pts[i].y + pts[i+1].y)/2;
-          ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-        }
-        // curve to last point
-        const last = pts[pts.length-1];
-        const prev = pts[pts.length-2];
-        ctx.quadraticCurveTo(prev.x, prev.y, last.x, last.y);
-      }
+      
 
       // redraw function that respects visibility and rescales axes
       function redrawLines(){
@@ -630,7 +711,7 @@
           perSenderDay.forEach((s, idx)=>{
             const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
             if (cb && !cb.checked) return;
-            const hue = (idx*57) % 360; const color = `hsl(${hue} 70% 45%)`;
+            const color = seriesColor(idx);
             const points = s.daily.map((x,i)=>({ x: padding + (i/(s.daily.length-1||1))*chartW, y: padding + chartH - (x.count/maxVal)*chartH }));
             drawSmooth(ctx, points);
             ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
@@ -670,6 +751,35 @@
 
       // initial draw
       redrawLines();
+
+      // attach generic hover handler
+      setupCanvasHover({
+        canvas, dates, padding, chartW, chartH,
+        redraw: redrawLines,
+        getEntriesAtIndex: idx => {
+          const out = [];
+          if (perSenderDay && perSenderDay.length){
+            perSenderDay.forEach((s, si)=>{
+              const cb = document.querySelector(`.participant-cb[value="${s.name}"]`);
+              if (!cb || cb.checked){ const val = (s.daily[idx] && s.daily[idx].count) || 0; out.push({ name: s.name, val, idx: si, color: seriesColor(si) }); }
+            });
+          }
+          // include total as footer via getFooterHtml
+          return out;
+        },
+        getMaxForEntries: entries => {
+          // compute max including totals if shown
+          let maxFromSenders = Math.max(1, ...entries.map(e=>e.val||0));
+          if (window._dayGraphState && window._dayGraphState.showTotal !== false){
+            const totals = dates.map((d,i)=>{ let sum=0; for (const s of perSenderDay) { const val = (s.daily[i] && s.daily[i].count) || 0; const cb = document.querySelector(`.participant-cb[value=\"${s.name}\"]`); if (!cb || cb.checked) sum+=val; } return sum; });
+            return Math.max(maxFromSenders, Math.max(1, ...totals));
+          }
+          return maxFromSenders;
+        },
+        getFooterHtml: (idx, entries) => {
+          if (window._dayGraphState && window._dayGraphState.showTotal !== false){ let tot=0; for (const s of perSenderDay){ const cb = document.querySelector(`.participant-cb[value=\"${s.name}\"]`); if (!cb || cb.checked) tot += (s.daily[idx] && s.daily[idx].count) || 0; } return `<div style="margin-top:6px"><strong>Total: ${tot}</strong></div>`; } return '';
+        }
+      });
     }
 
     // list top words with counts and relative frequencies
