@@ -48,7 +48,7 @@ function saveAndOpenResults(result){
   const {messages, perSender, media, perDay, perSenderDay} = result;
   const senders = Array.from(perSender.entries()).map(([name,info])=>({name, count: info.count, media: info.media || 0}));
   // build combined text from parsed messages, skipping obvious system messages
-  const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon)/i;
+  const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon|pinned a message)/i;
   const combined = (messages || []).map(m=>{
     const t = (m.text||'').trim();
     if (!t) return '';
@@ -61,7 +61,8 @@ function saveAndOpenResults(result){
   for (const m of messages){
     const text = (m.text||'').trim();
     if (!text) continue;
-    if (systemRegex.test(text)) continue;
+    if (systemRegex.test(text))
+       continue;
     const name = m.sender || 'Unknown';
     if (!perSenderMsgStats[name]) perSenderMsgStats[name] = { totalWords:0, longest:0, messages:0 };
     // count words without removing stopwords
@@ -239,7 +240,7 @@ function parseWhatsAppExport(text){
   const perSenderDay = new Map();
 
   // common system-message patterns to ignore
-  const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the subject|changed the group icon)/i;
+  const systemRegex = /(messages and calls are end-to-end encrypted|messages to this chat and calls are now secured|this message was deleted|changed the subject|changed the group description|joined using this group's invite link|created group|added|removed|left|was added|was removed|were added|changed the group icon|pinned a message|pinned message|unpinned a message|pinned|unpinned)/i;
 
   for (const m of messages){
     // try to extract sender
@@ -267,6 +268,8 @@ function parseWhatsAppExport(text){
         m.sender = sender;
       }
     }
+    if(sender === 'Unknown')
+      console.log(m);
 
     const textBody = (m.text || '').trim();
 
@@ -287,7 +290,7 @@ function parseWhatsAppExport(text){
     const cur = perSender.get(sender);
     cur.count += 1;
 
-    if (textBody && /<Media omitted>|\<arquivo de mídia omitido\>|<arquivo de mídia omitido>/i.test(textBody)){
+    if (textBody && /<Media omitted>/i.test(textBody)){
       mediaCount++;
       cur.media += 1;
     }
